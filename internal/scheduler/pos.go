@@ -84,3 +84,90 @@ func ComputeSequence(
 
 	return shuffled
 }
+
+// BlockSlot represents a scheduled block time slot
+type BlockSlot struct {
+	Number uint32
+	Time   uint64
+}
+
+// SeedProvider is a function that returns the seed for a given seed block number
+type SeedProvider func(seedBlockNum uint32) ([]byte, error)
+
+// FindNextSlots finds the next two scheduled block times for the target validator
+// It searches up to maxBlocks (400) future blocks
+// The sequence is computed once at the start and reused for all blocks
+func FindNextSlots(
+	proposers []Proposer,
+	startBlockNumber uint32,
+	startBlockTime uint64,
+	targetAddr thor.Address,
+	getSeed SeedProvider,
+) (first *BlockSlot, second *BlockSlot, err error) {
+	const (
+		maxBlocks     = 400
+		blockInterval = 10 // seconds per block (thor.BlockInterval())
+	)
+
+	// Calculate seed block number and fetch seed once
+	seedBlockNum := GetSeedBlockNumber(startBlockNumber)
+	seed, err := getSeed(seedBlockNum)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Compute sequence once using start block info
+	sequence := ComputeSequence(proposers, startBlockNumber, startBlockTime, seed)
+
+	var foundCount int
+
+	// Start from next block
+	currentBlockNum := startBlockNumber + 1
+	currentBlockTime := startBlockTime + blockInterval
+
+	for i := 0; i < maxBlocks; i++ {
+		// Calculate time offset from the ORIGINAL parent block (startBlockTime)
+		// This is the key: offset grows as we search forward
+		offset := (currentBlockTime - startBlockTime) / blockInterval
+
+		// Search through sequence starting from offset, skipping offline validators
+		// But if address == target, always match regardless of active status
+		for j := uint64(0); j < uint64(len(sequence)); j++ {
+			index := (j + offset - 1) % uint64(len(sequence))
+			entry := sequence[index]
+
+			// Check if this is the target validator
+			if entry.Address == targetAddr {
+				// Found target! Record this slot
+				foundCount++
+				slot := &BlockSlot{
+					Number: currentBlockNum,
+					Time:   currentBlockTime,
+				}
+
+				if foundCount == 1 {
+					first = slot
+				} else if foundCount == 2 {
+					second = slot
+					return first, second, nil
+				}
+				break
+			}
+
+			// Skip inactive validators (continue searching)
+			if !entry.Active {
+				continue
+			}
+
+			// Found an active validator that's not the target - this block belongs to them
+			break
+		}
+
+		// Move to next block
+		currentBlockNum++
+		currentBlockTime += blockInterval
+	}
+
+	// Return what we found (might be only first, or none)
+	return first, second, nil
+}

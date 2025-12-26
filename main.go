@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"validator-next-slot/internal/client"
-	"validator-next-slot/internal/consensus"
+	"validator-next-slot/internal/scheduler"
 
 	"github.com/vechain/thor/v2/thor"
 	"github.com/vechain/thor/v2/thorclient/builtin"
@@ -37,7 +37,7 @@ func main() {
 	c := client.NewVeChainClient(*nodeURL)
 	ctx := context.Background()
 
-	// 1. Get snapshot head
+	// 1. Get best block
 	bestBlockID, bestBlockNum, err := c.GetBestBlock(ctx)
 	if err != nil {
 		log.Fatalf("Failed to get best block: %v", err)
@@ -46,25 +46,19 @@ func main() {
 
 	fmt.Printf("Best Block: %d (%s)\n", bestBlockNum, revision)
 
-	// 2. Validate target validator first (fast path)
+	// 2. Validate target validator
 	fmt.Printf("Checking validator: %s\n", targetAddr)
 	validation, err := c.GetValidation(ctx, targetAddr.String(), revision)
 	if err != nil {
 		log.Fatalf("Failed to get validation for %s: %v", targetAddr, err)
 	}
 
-	// Check if validator has weight (is registered)
+	// Check if validator is registered
 	if validation.Status != builtin.StakerStatusActive {
 		log.Fatalf("Error: %s is not active", targetAddr)
 	}
 
-	// Check if validator is ONLINE (Active)
-	isOnline := validation.OfflineBlock == 0xFFFFFFFF // math.MaxUint32
-	if !isOnline {
-		log.Fatalf("Error: Target validator %s is OFFLINE (offlineBlock = %d)", targetAddr, validation.OfflineBlock)
-	}
-
-	fmt.Printf("✓ Target validator is ONLINE and active\n")
+	fmt.Printf("✓ Target validator is registered\n")
 	fmt.Printf("  Weight: %s\n", validation.Weight.String())
 	fmt.Printf("  Stake: %s VET\n", validation.Stake.String())
 
@@ -81,41 +75,59 @@ func main() {
 
 	fmt.Printf("Found %d active validators\n\n", len(validators))
 
-	proposers := make([]consensus.Proposer, len(validators))
+	// Convert to Proposer list
+	proposers := make([]scheduler.Proposer, len(validators))
 	for i, v := range validators {
-		proposers[i] = consensus.Proposer{
+		proposers[i] = scheduler.Proposer{
 			Address: v.Address,
 			Active:  v.Active,
 			Weight:  v.Weight,
 		}
 	}
 
-	// 4. Get Seed (Beta)
-	interval := thor.SeederInterval()
-	seedNum := (bestBlockNum / interval) * interval
-	seed, err := c.GetBlockBeta(ctx, fmt.Sprintf("%d", seedNum))
-	if err != nil {
-		log.Fatalf("Failed to get seed from block %d: %v", seedNum, err)
-	}
-
-	// 5. Initialize Scheduler
+	// 4. Get best block details
 	bestBlock, err := c.ThorClient().Block(revision)
 	if err != nil {
 		log.Fatalf("Failed to get best block details: %v", err)
 	}
-	parentTime := bestBlock.Timestamp
 
-	sched := consensus.NewPoSScheduler(targetAddr, proposers, bestBlockNum, parentTime, seed)
+	// 5. Create seed provider function
+	getSeed := func(seedBlockNum uint32) ([]byte, error) {
+		return c.GetBlockBeta(ctx, fmt.Sprintf("%d", seedBlockNum))
+	}
 
-	// 6. Predict Next Slot
-	now := uint64(time.Now().Unix())
-	nextSlot := sched.GetNextSlot(now)
+	// 6. Find next two slots for target validator
+	fmt.Printf("Searching for next slots for %s...\n\n", targetAddr)
+	first, second, err := scheduler.FindNextSlots(
+		proposers,
+		bestBlockNum,
+		bestBlock.Timestamp,
+		targetAddr,
+		getSeed,
+	)
+	if err != nil {
+		log.Fatalf("Failed to find next slots: %v", err)
+	}
 
-	fmt.Printf("\nTarget Validator: %s\n", targetAddr)
-	if nextSlot > 0 {
-		nextTime := time.Unix(int64(nextSlot), 0)
-		fmt.Printf("Next Scheduled Block: %s (in %v)\n", nextTime.Format(time.RFC3339), time.Until(nextTime).Round(time.Second))
+	// 7. Display results
+	fmt.Printf("Target Validator: %s\n", targetAddr)
+	if first != nil {
+		firstTime := time.Unix(int64(first.Time), 0)
+		fmt.Printf("First Slot:  Block #%d at %s (in %v)\n",
+			first.Number,
+			firstTime.Format(time.RFC3339),
+			time.Until(firstTime).Round(time.Second))
 	} else {
-		fmt.Println("Next Scheduled Block: Not found in current sequence")
+		fmt.Println("First Slot:  Not found in next 400 blocks")
+	}
+
+	if second != nil {
+		secondTime := time.Unix(int64(second.Time), 0)
+		fmt.Printf("Second Slot: Block #%d at %s (in %v)\n",
+			second.Number,
+			secondTime.Format(time.RFC3339),
+			time.Until(secondTime).Round(time.Second))
+	} else if first != nil {
+		fmt.Println("Second Slot: Not found in next 400 blocks")
 	}
 }
