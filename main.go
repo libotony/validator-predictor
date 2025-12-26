@@ -38,10 +38,7 @@ func main() {
 	}
 	revision := bestBlockID.String()
 
-	fmt.Printf("Best Block: %d (%s)\n", bestBlockNum, revision)
-
 	// 2. Get all validators for scheduler
-	fmt.Println("Fetching all active validators...")
 	validators, err := c.GetActiveValidators(ctx, revision)
 	if err != nil {
 		log.Fatalf("Failed to get validators: %v", err)
@@ -50,8 +47,6 @@ func main() {
 	if len(validators) == 0 {
 		log.Fatal("No active validators found")
 	}
-
-	fmt.Printf("Found %d active validators\n\n", len(validators))
 
 	// Convert to Proposer list
 	proposers := make([]scheduler.Proposer, len(validators))
@@ -77,8 +72,6 @@ func main() {
 	// Check if address argument is provided
 	if flag.NArg() < 1 {
 		// No address provided - show next first and second active proposers
-		fmt.Println("No validator address provided. Showing next block proposers based on best block.\n")
-
 		// Get seed for next block
 		seedBlockNum := scheduler.GetSeedBlockNumber(bestBlockNum)
 		seed, err := getSeed(seedBlockNum)
@@ -134,7 +127,6 @@ func main() {
 	}
 
 	// Validate target validator
-	fmt.Printf("Checking validator: %s\n", targetAddr)
 	validation, err := c.GetValidation(ctx, targetAddr.String(), revision)
 	if err != nil {
 		log.Fatalf("Failed to get validation for %s: %v", targetAddr, err)
@@ -145,12 +137,7 @@ func main() {
 		log.Fatalf("Error: %s is not active", targetAddr)
 	}
 
-	fmt.Printf("%s✓ Target validator is registered%s\n", colorGreen, colorReset)
-	fmt.Printf("  Weight: %s\n", validation.Weight.String())
-	fmt.Printf("  Stake: %s VET\n\n", validation.Stake.String())
-
 	// Find next two slots for target validator
-	fmt.Printf("Searching for next slots for %s%s%s...\n\n", colorCyan, targetAddr, colorReset)
 	first, second, err := scheduler.FindNextSlots(
 		proposers,
 		bestBlockNum,
