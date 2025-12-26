@@ -11,7 +11,6 @@ import (
 	"validator-next-slot/internal/scheduler"
 
 	"github.com/vechain/thor/v2/thor"
-	"github.com/vechain/thor/v2/thorclient/builtin"
 )
 
 // ANSI color codes
@@ -170,15 +169,19 @@ func main() {
 		log.Fatalf("Invalid address: %v", err)
 	}
 
-	// Validate target validator
-	validation, err := c.GetValidation(ctx, targetAddr.String(), revision)
-	if err != nil {
-		log.Fatalf("Failed to get validation for %s: %v", targetAddr, err)
+	// Check if validator exists in proposers list
+	found := false
+	for _, p := range proposers {
+		if p.Address == targetAddr {
+			found = true
+			if !p.Active {
+				log.Fatalf("Error: %s is not active", targetAddr)
+			}
+			break
+		}
 	}
-
-	// Check if validator is registered
-	if validation.Status != builtin.StakerStatusActive {
-		log.Fatalf("Error: %s is not active", targetAddr)
+	if !found {
+		log.Fatalf("Error: %s is not a validator", targetAddr)
 	}
 
 	// Find next two slots for target validator

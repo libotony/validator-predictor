@@ -6,24 +6,50 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math"
 	"math/big"
 	"net/http"
 	"strings"
 	"time"
 
-	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rlp"
-	thorAPI "github.com/vechain/thor/v2/api"
+	"github.com/vechain/thor/v2/abi"
+	"github.com/vechain/thor/v2/api"
 	"github.com/vechain/thor/v2/block"
+	"github.com/vechain/thor/v2/builtin"
 	"github.com/vechain/thor/v2/thor"
 	"github.com/vechain/thor/v2/thorclient"
-	"github.com/vechain/thor/v2/thorclient/builtin"
 
+	"validator-next-slot/internal/contracts"
 	"validator-next-slot/internal/model"
 	"validator-next-slot/internal/utils"
 )
+
+var (
+	GHOST_CONTRACT_ADDRESS thor.Address
+	activeValidators       *abi.Method
+	stakerAbi              *abi.ABI
+)
+
+func init() {
+	GHOST_CONTRACT_ADDRESS = thor.MustParseAddress("0x841a6556c524d47030762eb14dc4af897e605d9b")
+
+	utilABI, err := abi.New([]byte(contracts.StakerUtilABI))
+	if err != nil {
+		panic(err)
+	}
+
+	var found bool
+	activeValidators, found = utilABI.MethodByName("activeValidators")
+	if !found {
+		panic("activeValidators method not found")
+	}
+
+	stakerAbi, err = abi.New(builtin.Staker.RawABI())
+	if err != nil {
+		panic(err)
+	}
+}
 
 type VeChainClient struct {
 	client      *thorclient.Client
@@ -130,188 +156,61 @@ func (c *VeChainClient) GetActiveValidators(ctx context.Context, revision string
 	var validators []model.ValidatorInfo
 
 	err := utils.RetryWithBackoff(ctx, c.retryConfig, func() error {
-		// Create Staker instance
-		staker, err := builtin.NewStaker(c.client)
+		input, err := activeValidators.EncodeInput()
 		if err != nil {
-			return fmt.Errorf("failed to create staker: %w", err)
+			return fmt.Errorf("failed to encode activeValidators input: %w", err)
 		}
 
-		// Use the specified revision
-		stakerAtRevision := staker.Revision(revision)
-
-		// Get first active validator
-		_, firstAddr, err := stakerAtRevision.FirstActive()
-		if err != nil {
-			return fmt.Errorf("failed to get first active validator: %w", err)
-		}
-
-		validators = make([]model.ValidatorInfo, 0, 101)
-		currentAddr := firstAddr
-
-		// Staker contract address (20 bytes)
-		stakerAddr := thor.MustParseAddress("0x00000000000000000000000000005374616b6572")
-
-		// Parse Staker ABI for encoding
-		stakerABI := `[
-			{
-				"inputs": [{"name": "addr","type": "address"}],
-				"name": "getValidation",
-				"outputs": [
-					{"name": "endorser","type": "address"},
-					{"name": "stake","type": "uint256"},
-					{"name": "weight","type": "uint256"},
-					{"name": "queuedStake","type": "uint256"},
-					{"name": "status","type": "uint8"},
-					{"name": "offlineBlock","type": "uint32"}
-				],
-				"type": "function"
-			},
-			{
-				"inputs": [{"name": "addr","type": "address"}],
-				"name": "next",
-				"outputs": [
-					{"name": "next","type": "address"}
-				],
-				"type": "function"
-			}
-		]`
-
-		parsedABI, err := abi.JSON(strings.NewReader(stakerABI))
-		if err != nil {
-			return fmt.Errorf("failed to parse staker ABI: %w", err)
-		}
-
-		// Iterate through linked list using batch calls
-		for currentAddr != (thor.Address{}) {
-			// Encode GetValidation call
-			getValidationData, err := parsedABI.Pack("getValidation", common.Address(currentAddr))
-			if err != nil {
-				return fmt.Errorf("failed to encode getValidation: %w", err)
-			}
-
-			// Encode Next call
-			nextData, err := parsedABI.Pack("next", common.Address(currentAddr))
-			if err != nil {
-				return fmt.Errorf("failed to encode next: %w", err)
-			}
-
-			// Build batch call
-			batchData := &thorAPI.BatchCallData{
-				Clauses: thorAPI.Clauses{
-					&thorAPI.Clause{
-						To:    &stakerAddr,
-						Value: nil,
-						Data:  "0x" + hex.EncodeToString(getValidationData),
-					},
-					&thorAPI.Clause{
-						To:    &stakerAddr,
-						Value: nil,
-						Data:  "0x" + hex.EncodeToString(nextData),
-					},
+		results, err := c.client.InspectClauses(&api.BatchCallData{
+			Clauses: api.Clauses{
+				&api.Clause{
+					Value: nil,
+					Data:  "0x" + contracts.StakerUtilBytecode,
 				},
-			}
+				&api.Clause{
+					To:    &GHOST_CONTRACT_ADDRESS,
+					Data:  "0x" + hex.EncodeToString(input),
+					Value: nil,
+				},
+			},
+		}, thorclient.Revision(revision))
+		if err != nil {
+			return fmt.Errorf("failed to inspect clauses: %w", err)
+		}
 
-			results, err := c.client.InspectClauses(batchData, thorclient.Revision(revision))
-			if err != nil {
-				return fmt.Errorf("failed batch call for %s: %w", currentAddr, err)
+		for index, result := range results {
+			if result.Reverted {
+				return fmt.Errorf("reverted in clause %d", index)
 			}
+		}
 
-			if len(results) != 2 {
-				return fmt.Errorf("unexpected batch results count: %d", len(results))
-			}
+		var (
+			addresses    []common.Address
+			weights      []*big.Int
+			onlineStatus []bool
+		)
+		dec, err := hex.DecodeString(strings.TrimPrefix(results[1].Data, "0x"))
+		if err != nil {
+			return fmt.Errorf("failed to decode hex: %w", err)
+		}
 
-			// Check if calls reverted
-			if results[0].Reverted {
-				return fmt.Errorf("getValidation call reverted for %s", currentAddr)
-			}
-			if results[1].Reverted {
-				return fmt.Errorf("next call reverted for %s", currentAddr)
-			}
+		err = activeValidators.DecodeOutput(dec, &[]any{&addresses, &weights, &onlineStatus})
+		if err != nil {
+			return fmt.Errorf("failed to decode output: %w", err)
+		}
 
-			// Decode GetValidation result
-			validationData, err := hex.DecodeString(strings.TrimPrefix(results[0].Data, "0x"))
-			if err != nil {
-				return fmt.Errorf("failed to decode validation hex: %w", err)
-			}
-
-			// Unpack using UnpackValues
-			values, err := parsedABI.Methods["getValidation"].Outputs.UnpackValues(validationData)
-			if err != nil {
-				return fmt.Errorf("failed to unpack validation: %w", err)
-			}
-
-			if len(values) != 6 {
-				return fmt.Errorf("unexpected unpack result length: %d", len(values))
-			}
-
-			// Extract values: endorser, stake, weight, queuedStake, offlineBlock, status
-			weight := values[2].(*big.Int)
-			offlineBlock := values[5].(uint32)
-
-			// Only include validators with weight > 0
-			if weight.Sign() > 0 {
-				validators = append(validators, model.ValidatorInfo{
-					Address: currentAddr,
-					Weight:  weight,
-					Active:  offlineBlock == math.MaxUint32,
-				})
-			}
-
-			// Decode Next result
-			nextResultData, err := hex.DecodeString(strings.TrimPrefix(results[1].Data, "0x"))
-			if err != nil {
-				return fmt.Errorf("failed to decode next hex: %w", err)
-			}
-
-			nextValues, err := parsedABI.Methods["next"].Outputs.UnpackValues(nextResultData)
-			if err != nil {
-				return fmt.Errorf("failed to unpack next: %w", err)
-			}
-
-			if len(nextValues) != 1 {
-				return fmt.Errorf("unexpected next result length: %d", len(nextValues))
-			}
-
-			nextAddr := nextValues[0].(common.Address)
-			currentAddr = thor.Address(nextAddr)
-			if currentAddr == (thor.Address{}) {
-				break
-			}
+		for i := range len(addresses) {
+			validators = append(validators, model.ValidatorInfo{
+				Address: thor.Address(addresses[i]),
+				Weight:  weights[i],
+				Active:  onlineStatus[i],
+			})
 		}
 
 		return nil
 	})
 
 	return validators, err
-}
-
-// GetValidation fetches validation info for a specific validator
-func (c *VeChainClient) GetValidation(ctx context.Context, validatorAddr string, revision string) (*builtin.Validation, error) {
-	var validation *builtin.Validation
-
-	err := utils.RetryWithBackoff(ctx, c.retryConfig, func() error {
-		// Create Staker instance
-		staker, err := builtin.NewStaker(c.client)
-		if err != nil {
-			return fmt.Errorf("failed to create staker: %w", err)
-		}
-
-		// Use the specified revision
-		stakerAtRevision := staker.Revision(revision)
-
-		// Parse validator address
-		addr := thor.MustParseAddress(validatorAddr)
-
-		// Get validation info
-		validation, err = stakerAtRevision.GetValidation(addr)
-		if err != nil {
-			return fmt.Errorf("failed to get validation: %w", err)
-		}
-
-		return nil
-	})
-
-	return validation, err
 }
 
 // TotalStake represents the result of totalStake() call
@@ -325,19 +224,42 @@ func (c *VeChainClient) GetTotalStake(ctx context.Context, revision string) (*To
 	var result *TotalStake
 
 	err := utils.RetryWithBackoff(ctx, c.retryConfig, func() error {
-		// Create Staker instance
-		staker, err := builtin.NewStaker(c.client)
-		if err != nil {
-			return fmt.Errorf("failed to create staker: %w", err)
+		method, found := stakerAbi.MethodByName("totalStake")
+		if !found {
+			return fmt.Errorf("totalStake method not found")
 		}
 
-		// Use the specified revision
-		stakerAtRevision := staker.Revision(revision)
-
-		// Call totalStake()
-		totalVET, totalWeight, err := stakerAtRevision.TotalStake()
+		input, err := method.EncodeInput()
 		if err != nil {
-			return fmt.Errorf("failed to get total stake: %w", err)
+			return fmt.Errorf("failed to encode totalStake input: %w", err)
+		}
+
+		results, err := c.client.InspectClauses(&api.BatchCallData{
+			Clauses: api.Clauses{
+				&api.Clause{
+					To:    &builtin.Staker.Address,
+					Data:  "0x" + hex.EncodeToString(input),
+					Value: nil,
+				},
+			},
+		}, thorclient.Revision(revision))
+		if err != nil {
+			return fmt.Errorf("failed to inspect clauses: %w", err)
+		}
+
+		if len(results) != 1 || results[0].Reverted {
+			return fmt.Errorf("failed to get total stake")
+		}
+
+		dec, err := hex.DecodeString(strings.TrimPrefix(results[0].Data, "0x"))
+		if err != nil {
+			return fmt.Errorf("failed to decode hex: %w", err)
+		}
+
+		var totalVET, totalWeight *big.Int
+		err = method.DecodeOutput(dec, &[]any{&totalVET, &totalWeight})
+		if err != nil {
+			return fmt.Errorf("failed to decode output: %w", err)
 		}
 
 		result = &TotalStake{
