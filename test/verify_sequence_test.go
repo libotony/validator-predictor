@@ -74,7 +74,7 @@ func TestVerifySequence(t *testing.T) {
 	}
 
 	// 7. Compute sequence using parent block info
-	sequence := scheduler.ComputeSequence(proposers, parentBlockNum, parentTime, seed)
+	sequence := scheduler.ComputeSequence(proposers, parentBlockNum, seed)
 
 	t.Logf("\n=== Verification ===")
 	t.Logf("Expected Signer: %s", bestBlockSigner)

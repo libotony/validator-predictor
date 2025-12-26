@@ -35,7 +35,6 @@ func GetSeedBlockNumber(parentBlockNumber uint32) uint32 {
 func ComputeSequence(
 	proposers []Proposer,
 	parentBlockNumber uint32,
-	parentBlockTime uint64,
 	seed []byte,
 ) []SequenceEntry {
 	var (
@@ -117,7 +116,7 @@ func FindNextSlots(
 	}
 
 	// Compute sequence once using start block info
-	sequence := ComputeSequence(proposers, startBlockNumber, startBlockTime, seed)
+	sequence := ComputeSequence(proposers, startBlockNumber, seed)
 
 	var foundCount int
 
