@@ -1,0 +1,1 @@
+[{"inputs":[],"name":"activeValidators","outputs":[{"internalType":"address[]","name":"validators","type":"address[]"},{"internalType":"uint256[]","name":"weights","type":"uint256[]"},{"internalType":"bool[]","name":"onlineStatus","type":"bool[]"}],"stateMutability":"view","type":"function"}]
