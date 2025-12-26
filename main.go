@@ -14,6 +14,16 @@ import (
 	"github.com/vechain/thor/v2/thorclient/builtin"
 )
 
+// ANSI color codes
+const (
+	colorReset  = "\033[0m"
+	colorGreen  = "\033[32m"
+	colorYellow = "\033[33m"
+	colorBlue   = "\033[34m"
+	colorCyan   = "\033[36m"
+	colorBold   = "\033[1m"
+)
+
 func main() {
 	nodeURL := flag.String("node", "https://mainnet.vechain.org", "VeChain node REST API URL")
 	flag.Parse()
@@ -78,7 +88,7 @@ func main() {
 
 		// Compute sequence for next block
 		nextBlockNum := bestBlockNum + 1
-		sequence := scheduler.ComputeSequence(proposers, nextBlockNum, seed)
+		sequence := scheduler.ComputeSequence(proposers, nextBlockNum-1, seed)
 
 		// Find first and second active proposers
 		var firstProposer, secondProposer *scheduler.Entry
@@ -94,20 +104,24 @@ func main() {
 		}
 
 		// Display results
-		fmt.Printf("Next Block: #%d\n", nextBlockNum)
+		fmt.Printf("%s%sNext Block: #%d%s\n", colorBold, colorCyan, nextBlockNum, colorReset)
 		if firstProposer != nil {
 			firstTime := time.Unix(int64(bestBlock.Timestamp+10), 0)
-			fmt.Printf("First Proposer:  %s\n", firstProposer.Address)
-			fmt.Printf("  Expected time: %s (in %v)\n",
+			fmt.Printf("%sFirst Proposer:%s  %s%s%s\n", colorBold, colorReset, colorGreen, firstProposer.Address, colorReset)
+			fmt.Printf("  Expected time: %s (in %s%v%s)\n",
 				firstTime.Format(time.RFC3339),
-				time.Until(firstTime).Round(time.Second))
+				colorYellow,
+				time.Until(firstTime).Round(time.Second),
+				colorReset)
 		}
 		if secondProposer != nil {
 			secondTime := time.Unix(int64(bestBlock.Timestamp+20), 0)
-			fmt.Printf("\nSecond Proposer: %s\n", secondProposer.Address)
-			fmt.Printf("  Backup time:   %s (in %v)\n",
+			fmt.Printf("\n%sSecond Proposer:%s %s%s%s\n", colorBold, colorReset, colorBlue, secondProposer.Address, colorReset)
+			fmt.Printf("  Backup time:   %s (in %s%v%s)\n",
 				secondTime.Format(time.RFC3339),
-				time.Until(secondTime).Round(time.Second))
+				colorYellow,
+				time.Until(secondTime).Round(time.Second),
+				colorReset)
 		}
 		return
 	}
@@ -131,12 +145,12 @@ func main() {
 		log.Fatalf("Error: %s is not active", targetAddr)
 	}
 
-	fmt.Printf("✓ Target validator is registered\n")
+	fmt.Printf("%s✓ Target validator is registered%s\n", colorGreen, colorReset)
 	fmt.Printf("  Weight: %s\n", validation.Weight.String())
 	fmt.Printf("  Stake: %s VET\n\n", validation.Stake.String())
 
 	// Find next two slots for target validator
-	fmt.Printf("Searching for next slots for %s...\n\n", targetAddr)
+	fmt.Printf("Searching for next slots for %s%s%s...\n\n", colorCyan, targetAddr, colorReset)
 	first, second, err := scheduler.FindNextSlots(
 		proposers,
 		bestBlockNum,
@@ -149,23 +163,35 @@ func main() {
 	}
 
 	// Display results
-	fmt.Printf("Target Validator: %s\n", targetAddr)
+	fmt.Printf("%sTarget Validator:%s %s%s%s\n", colorBold, colorReset, colorCyan, targetAddr, colorReset)
 	if first != nil {
 		firstTime := time.Unix(int64(first.Time), 0)
-		fmt.Printf("First Slot:  Block #%d at %s (in %v)\n",
+		fmt.Printf("%sFirst Slot:%s  Block #%s%d%s at %s (in %s%v%s)\n",
+			colorBold,
+			colorReset,
+			colorGreen,
 			first.Number,
+			colorReset,
 			firstTime.Format(time.RFC3339),
-			time.Until(firstTime).Round(time.Second))
+			colorYellow,
+			time.Until(firstTime).Round(time.Second),
+			colorReset)
 	} else {
 		fmt.Println("First Slot:  Not found in next 400 blocks")
 	}
 
 	if second != nil {
 		secondTime := time.Unix(int64(second.Time), 0)
-		fmt.Printf("Second Slot: Block #%d at %s (in %v)\n",
+		fmt.Printf("%sSecond Slot:%s Block #%s%d%s at %s (in %s%v%s)\n",
+			colorBold,
+			colorReset,
+			colorBlue,
 			second.Number,
+			colorReset,
 			secondTime.Format(time.RFC3339),
-			time.Until(secondTime).Round(time.Second))
+			colorYellow,
+			time.Until(secondTime).Round(time.Second),
+			colorReset)
 	} else if first != nil {
 		fmt.Println("Second Slot: Not found in next 400 blocks")
 	}
