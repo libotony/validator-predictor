@@ -9,8 +9,6 @@ import (
 	"validator-next-slot/internal/client"
 )
 
-var nodeURL = "http://10.10.10.4:8669"
-
 func TestTotalWeight(t *testing.T) {
 	t.Logf("Testing GetActiveValidators and calculating total weight")
 	t.Logf("Node: %s", nodeURL)

@@ -24,3 +24,6 @@ coverage.txt
 staker-overview/
 
 .claude/
+
+# IDE settings
+.vscode/
