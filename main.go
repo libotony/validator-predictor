@@ -97,14 +97,14 @@ func main() {
 		fmt.Printf("Next Block: #%d\n", nextBlockNum)
 		if firstProposer != nil {
 			firstTime := time.Unix(int64(bestBlock.Timestamp+10), 0)
-			fmt.Printf("First Proposer:  %s (Weight: %d VET)\n", firstProposer.Address, firstProposer.Weight)
+			fmt.Printf("First Proposer:  %s\n", firstProposer.Address)
 			fmt.Printf("  Expected time: %s (in %v)\n",
 				firstTime.Format(time.RFC3339),
 				time.Until(firstTime).Round(time.Second))
 		}
 		if secondProposer != nil {
 			secondTime := time.Unix(int64(bestBlock.Timestamp+20), 0)
-			fmt.Printf("\nSecond Proposer: %s (Weight: %d VET)\n", secondProposer.Address, secondProposer.Weight)
+			fmt.Printf("\nSecond Proposer: %s\n", secondProposer.Address)
 			fmt.Printf("  Backup time:   %s (in %v)\n",
 				secondTime.Format(time.RFC3339),
 				time.Until(secondTime).Round(time.Second))
