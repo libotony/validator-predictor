@@ -10,12 +10,14 @@ import (
 	"github.com/vechain/thor/v2/thor"
 )
 
-type SequenceEntry struct {
+type Entry struct {
 	Address thor.Address
 	Weight  uint64
 	Active  bool
 	score   float64
 }
+
+type Sequence []Entry
 
 // Proposer with status and weight
 type Proposer struct {
@@ -36,9 +38,9 @@ func ComputeSequence(
 	proposers []Proposer,
 	parentBlockNumber uint32,
 	seed []byte,
-) []SequenceEntry {
+) Sequence {
 	var (
-		shuffled = make([]SequenceEntry, 0, len(proposers))
+		shuffled = make(Sequence, 0, len(proposers))
 	)
 
 	var num [4]byte
@@ -58,8 +60,8 @@ func ComputeSequence(
 		if random == 0 {
 			random = 1e-10 // prevent ln(0)
 		}
-		wt := p.Weight.Div(p.Weight, big.NewInt(1e18)).Uint64()
-		shuffled = append(shuffled, SequenceEntry{
+		wt := new(big.Int).Div(p.Weight, big.NewInt(1e18)).Uint64()
+		shuffled = append(shuffled, Entry{
 			Address: p.Address,
 			Weight:  wt,
 			Active:  p.Active,
@@ -70,7 +72,7 @@ func ComputeSequence(
 	}
 
 	// Step 3: Sort validators by priority score in ascending order
-	slices.SortStableFunc(shuffled, func(a, b SequenceEntry) int {
+	slices.SortStableFunc(shuffled, func(a, b Entry) int {
 		switch {
 		case a.score < b.score:
 			return -1
@@ -84,6 +86,29 @@ func ComputeSequence(
 	return shuffled
 }
 
+func (s Sequence) findNextActive(index int, targetAddr thor.Address) (int, thor.Address) {
+	for i := index; i < len(s); i++ {
+		if s[i].Active || s[i].Address == targetAddr {
+			return i, s[i].Address
+		}
+	}
+	return -1, thor.Address{} // not found
+}
+
+func (s Sequence) IsFirstActive(targetAddr thor.Address) bool {
+	_, addr := s.findNextActive(0, targetAddr)
+	return addr == targetAddr
+}
+
+func (s Sequence) IsSecondActive(targetAddr thor.Address) bool {
+	i, addr := s.findNextActive(0, targetAddr)
+	if addr == targetAddr {
+		return false
+	}
+	_, addr = s.findNextActive(i+1, targetAddr)
+	return addr == targetAddr
+}
+
 // BlockSlot represents a scheduled block time slot
 type BlockSlot struct {
 	Number uint32
@@ -95,7 +120,7 @@ type SeedProvider func(seedBlockNum uint32) ([]byte, error)
 
 // FindNextSlots finds the next two scheduled block times for the target validator
 // It searches up to maxBlocks (400) future blocks
-// The sequence is computed once at the start and reused for all blocks
+// Proposers are reused but sequence is recomputed for each block number
 func FindNextSlots(
 	proposers []Proposer,
 	startBlockNumber uint32,
@@ -104,67 +129,47 @@ func FindNextSlots(
 	getSeed SeedProvider,
 ) (first *BlockSlot, second *BlockSlot, err error) {
 	const (
-		maxBlocks     = 400
+		maxTries      = 400
 		blockInterval = 10 // seconds per block (thor.BlockInterval())
 	)
 
-	// Calculate seed block number and fetch seed once
-	seedBlockNum := GetSeedBlockNumber(startBlockNumber)
-	seed, err := getSeed(seedBlockNum)
-	if err != nil {
-		return nil, nil, err
-	}
+	var seed []byte
 
-	// Compute sequence once using start block info
-	sequence := ComputeSequence(proposers, startBlockNumber, seed)
+	for i := 0; i < maxTries; i++ {
+		blockNum := startBlockNumber + uint32(i)
 
-	var foundCount int
-
-	// Start from next block
-	currentBlockNum := startBlockNumber + 1
-	currentBlockTime := startBlockTime + blockInterval
-
-	for i := 0; i < maxBlocks; i++ {
-		// Calculate time offset from the ORIGINAL parent block (startBlockTime)
-		// This is the key: offset grows as we search forward
-		offset := (currentBlockTime - startBlockTime) / blockInterval
-
-		// Search through sequence starting from offset, skipping offline validators
-		// But if address == target, always match regardless of active status
-		for j := uint64(0); j < uint64(len(sequence)); j++ {
-			index := (j + offset - 1) % uint64(len(sequence))
-			entry := sequence[index]
-
-			// Check if this is the target validator
-			if entry.Address == targetAddr {
-				// Found target! Record this slot
-				foundCount++
-				slot := &BlockSlot{
-					Number: currentBlockNum,
-					Time:   currentBlockTime,
-				}
-
-				if foundCount == 1 {
-					first = slot
-				} else if foundCount == 2 {
-					second = slot
-					return first, second, nil
-				}
-				break
+		if seed == nil || blockNum%thor.SeederInterval() == 0 {
+			seed, err = getSeed(GetSeedBlockNumber(blockNum))
+			if err != nil {
+				return nil, nil, err
 			}
-
-			// Skip inactive validators (continue searching)
-			if !entry.Active {
-				continue
-			}
-
-			// Found an active validator that's not the target - this block belongs to them
-			break
 		}
 
-		// Move to next block
-		currentBlockNum++
-		currentBlockTime += blockInterval
+		// Compute sequence for this specific block number
+		sequence := ComputeSequence(proposers, blockNum, seed)
+
+		// Check if target is first or second active in this block's sequence
+		if sequence.IsFirstActive(targetAddr) {
+			if first == nil {
+				first = &BlockSlot{
+					Number: blockNum,
+					Time:   startBlockTime + uint64(i+1)*blockInterval,
+				}
+				if second != nil {
+					return first, second, nil
+				}
+			}
+		} else if sequence.IsSecondActive(targetAddr) {
+			if second == nil {
+				second = &BlockSlot{
+					Number: blockNum,
+					Time:   startBlockTime + uint64(i+2)*blockInterval,
+				}
+				if first != nil {
+					return first, second, nil
+				}
+			}
+		}
 	}
 
 	// Return what we found (might be only first, or none)
