@@ -4,7 +4,7 @@ import (
 	"math/big"
 	"testing"
 
-	"validator-next-slot/internal/scheduler"
+	"validator-predictor/internal/scheduler"
 
 	"github.com/vechain/thor/v2/thor"
 )

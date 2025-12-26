@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"validator-next-slot/internal/client"
+	"validator-predictor/internal/client"
 )
 
 func TestTotalWeight(t *testing.T) {

@@ -6,7 +6,7 @@ REQUIREMENTS.md
 *.dll
 *.so
 *.dylib
-validator-next-slot
+validator-predictor
 
 # Go dependency directory
 # If you are using Go modules, you might not need to ignore the vendor directory

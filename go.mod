@@ -1,4 +1,4 @@
-module validator-next-slot
+module validator-predictor
 
 go 1.25.4
 

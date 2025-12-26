@@ -7,8 +7,8 @@ import (
 	"log"
 	"time"
 
-	"validator-next-slot/internal/client"
-	"validator-next-slot/internal/scheduler"
+	"validator-predictor/internal/client"
+	"validator-predictor/internal/scheduler"
 
 	"github.com/vechain/thor/v2/thor"
 )

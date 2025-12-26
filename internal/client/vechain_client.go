@@ -20,9 +20,9 @@ import (
 	"github.com/vechain/thor/v2/thor"
 	"github.com/vechain/thor/v2/thorclient"
 
-	"validator-next-slot/internal/contracts"
-	"validator-next-slot/internal/model"
-	"validator-next-slot/internal/utils"
+	"validator-predictor/internal/contracts"
+	"validator-predictor/internal/model"
+	"validator-predictor/internal/utils"
 )
 
 var (

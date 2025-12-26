@@ -1,4 +1,4 @@
-# VeChain Validator Next Slot Predictor
+# VeChain Validator Predictor
 
 A Go tool to predict the next block production time for VeChain validators using the PoA 2.0 (SURFACE) consensus algorithm.
 
@@ -17,17 +17,17 @@ A Go tool to predict the next block production time for VeChain validators using
 go build
 
 # Show next block proposers (default mode)
-./validator-next-slot
+./validator-predictor
 
 # Predict next N blocks (default 20)
-./validator-next-slot --predict
-./validator-next-slot --predict -n 10
+./validator-predictor --predict
+./validator-predictor --predict -n 10
 
 # Find slots for specific validator
-./validator-next-slot 0x<validator_address>
+./validator-predictor 0x<validator_address>
 
 # Custom node
-./validator-next-slot --node https://mainnet.vechain.org
+./validator-predictor --node https://mainnet.vechain.org
 
 # Run tests
 go test -v ./test
@@ -36,7 +36,7 @@ go test -v ./test
 ## Architecture
 
 ```
-validator-next-slot/
+validator-predictor/
 ├── main.go                    # Entry point
 ├── internal/
 │   ├── client/
