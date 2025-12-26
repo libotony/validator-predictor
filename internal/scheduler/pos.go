@@ -136,7 +136,7 @@ func FindNextSlots(
 	var seed []byte
 
 	for i := 0; i < maxTries; i++ {
-		blockNum := startBlockNumber + uint32(i)
+		blockNum := startBlockNumber + uint32(i) + 1
 
 		if seed == nil || blockNum%thor.SeederInterval() == 0 {
 			seed, err = getSeed(GetSeedBlockNumber(blockNum))
@@ -146,7 +146,7 @@ func FindNextSlots(
 		}
 
 		// Compute sequence for this specific block number
-		sequence := ComputeSequence(proposers, blockNum, seed)
+		sequence := ComputeSequence(proposers, blockNum-1, seed)
 
 		// Check if target is first or second active in this block's sequence
 		if sequence.IsFirstActive(targetAddr) {

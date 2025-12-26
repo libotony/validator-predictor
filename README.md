@@ -16,11 +16,18 @@ A Go tool to predict the next block production time for VeChain validators using
 # Build
 go build
 
-# Run with validator address
+# Show next block proposers (default mode)
+./validator-next-slot
+
+# Predict next N blocks (default 20)
+./validator-next-slot --predict
+./validator-next-slot --predict -n 10
+
+# Find slots for specific validator
 ./validator-next-slot 0x<validator_address>
 
 # Custom node
-./validator-next-slot 0x<validator_address> --node https://mainnet.vechain.org
+./validator-next-slot --node https://mainnet.vechain.org
 
 # Run tests
 go test -v ./test
@@ -33,18 +40,13 @@ validator-next-slot/
 ├── main.go                    # Entry point
 ├── internal/
 │   ├── client/
-│   │   └── vechain_client.go  # VeChain node client with retry logic
-│   ├── scheduler/
-│   │   └── pos.go             # PoS scheduler implementation with sequence computation
-│   ├── consensus/
-│   │   └── pos.go             # Next slot finder logic
-│   ├── model/
-│   │   └── validator.go       # Simplified validator data model
-│   └── utils/
-│       └── retry.go           # Retry with exponential backoff
+│   │   └── vechain_client.go  # VeChain client with retry logic
+│   └── scheduler/
+│       └── pos.go             # Sequence computation & slot finding
 └── test/
-    ├── verify_sequence_test.go  # Sequence computation verification test
-    └── total_weight_test.go     # Validator weight calculation test
+    ├── verify_sequence_test.go
+    ├── total_weight_test.go
+    └── sequence_test.go
 ```
 
 ## How It Works
