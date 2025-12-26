@@ -1,0 +1,26 @@
+REQUIREMENTS.md
+
+# Go build artifacts and executables
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+validator-next-slot
+
+# Go dependency directory
+# If you are using Go modules, you might not need to ignore the vendor directory
+# unless you explicitly use `go mod vendor`.
+/vendor/
+
+# Test coverage profiles
+*.out
+coverage.txt
+
+# Environment variables file
+.env
+
+# Private dependency
+staker-overview/
+
+.claude/
