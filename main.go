@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	"validator-predictor/internal/client"
@@ -12,6 +14,31 @@ import (
 
 	"github.com/vechain/thor/v2/thor"
 )
+
+// jsonSlot is a single proposer slot in -json output.
+type jsonSlot struct {
+	Number uint32 `json:"number"`
+	Time   uint64 `json:"time"`
+	In     int64  `json:"in"`
+}
+
+// jsonSlotsOutput is the -json output shape for address mode.
+type jsonSlotsOutput struct {
+	Validator string    `json:"validator"`
+	First     *jsonSlot `json:"first"`
+	Second    *jsonSlot `json:"second"`
+}
+
+func toJSONSlot(s *scheduler.BlockSlot) *jsonSlot {
+	if s == nil {
+		return nil
+	}
+	return &jsonSlot{
+		Number: s.Number,
+		Time:   s.Time,
+		In:     int64(time.Until(time.Unix(int64(s.Time), 0)).Round(time.Second).Seconds()),
+	}
+}
 
 // ANSI color codes
 const (
@@ -27,7 +54,12 @@ func main() {
 	nodeURL := flag.String("node", "https://mainnet.vechain.org", "VeChain node REST API URL")
 	predict := flag.Bool("predict", false, "Predict next N blocks (use -n to specify count, default 20)")
 	numBlocks := flag.Int("n", 20, "Number of blocks to predict (used with -predict)")
+	jsonOut := flag.Bool("json", false, "Output JSON (address mode only)")
 	flag.Parse()
+
+	if *jsonOut && (*predict || flag.NArg() < 1) {
+		log.Fatal("-json requires a validator address")
+	}
 
 	c := client.NewVeChainClient(*nodeURL)
 	ctx := context.Background()
@@ -194,6 +226,18 @@ func main() {
 	)
 	if err != nil {
 		log.Fatalf("Failed to find next slots: %v", err)
+	}
+
+	if *jsonOut {
+		out := jsonSlotsOutput{
+			Validator: targetAddr.String(),
+			First:     toJSONSlot(first),
+			Second:    toJSONSlot(second),
+		}
+		if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
+			log.Fatalf("Failed to encode JSON: %v", err)
+		}
+		return
 	}
 
 	// Display results
