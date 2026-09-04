@@ -25,6 +25,7 @@ go build
 
 # Find slots for specific validator
 ./validator-predictor 0x<validator_address>
+./validator-predictor -json 0x<validator_address>
 
 # Custom node
 ./validator-predictor --node https://mainnet.vechain.org
