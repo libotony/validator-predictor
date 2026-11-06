@@ -119,27 +119,27 @@ type BlockSlot struct {
 type SeedProvider func(seedBlockNum uint32) ([]byte, error)
 
 // FindNextSlots finds the next two scheduled block times for the target validator
-// It searches up to maxBlocks (400) future blocks
+// It searches up to lookahead future blocks
 // Proposers are reused but sequence is recomputed for each block number
 func FindNextSlots(
 	proposers []Proposer,
 	startBlockNumber uint32,
 	startBlockTime uint64,
 	targetAddr thor.Address,
+	lookahead int,
 	getSeed SeedProvider,
 ) (first *BlockSlot, second *BlockSlot, err error) {
 	const (
-		maxTries      = 400
 		blockInterval = 10 // seconds per block (thor.BlockInterval())
 	)
 
 	var seed []byte
 
-	for i := 0; i < maxTries; i++ {
+	for i := 0; i < lookahead; i++ {
 		blockNum := startBlockNumber + uint32(i) + 1
 
 		if seed == nil || blockNum%thor.SeederInterval() == 0 {
-			seed, err = getSeed(GetSeedBlockNumber(blockNum))
+			seed, err = getSeed(GetSeedBlockNumber(blockNum - 1))
 			if err != nil {
 				return nil, nil, err
 			}

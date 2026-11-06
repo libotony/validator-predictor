@@ -55,7 +55,12 @@ func main() {
 	predict := flag.Bool("predict", false, "Predict next N blocks (use -n to specify count, default 20)")
 	numBlocks := flag.Int("n", 20, "Number of blocks to predict (used with -predict)")
 	jsonOut := flag.Bool("json", false, "Output JSON (address mode only)")
+	lookahead := flag.Int("lookahead", 2160, "Number of blocks to search for slots in address mode (default 2160, about 6 hours)")
 	flag.Parse()
+
+	if *lookahead <= 0 {
+		log.Fatal("-lookahead must be greater than 0")
+	}
 
 	if *jsonOut && (*predict || flag.NArg() < 1) {
 		log.Fatal("-json requires a validator address")
@@ -222,6 +227,7 @@ func main() {
 		bestBlockNum,
 		bestBlock.Timestamp,
 		targetAddr,
+		*lookahead,
 		getSeed,
 	)
 	if err != nil {
@@ -255,7 +261,7 @@ func main() {
 			time.Until(firstTime).Round(time.Second),
 			colorReset)
 	} else {
-		fmt.Println("As First Proposer:  Not found in next 400 blocks")
+		fmt.Printf("As First Proposer:  Not found in next %d blocks\n", *lookahead)
 	}
 
 	if second != nil {
@@ -271,6 +277,6 @@ func main() {
 			time.Until(secondTime).Round(time.Second),
 			colorReset)
 	} else if first != nil {
-		fmt.Println("As Second Proposer: Not found in next 400 blocks")
+		fmt.Printf("As Second Proposer: Not found in next %d blocks\n", *lookahead)
 	}
 }
